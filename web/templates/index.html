@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Artwork Digitizer</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; color: #222; }
+      h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+      form { max-width: 720px; }
+      .row { display: flex; gap: 1rem; margin-bottom: 0.75rem; }
+      .row > label { width: 180px; display: flex; align-items: center; }
+      .row > div { flex: 1; }
+      input[type="text"], input[type="number"], select { width: 100%; padding: 0.5rem; }
+      input[type="file"] { padding: 0.25rem 0; }
+      button { background: #0d6efd; color: white; border: none; padding: 0.6rem 1rem; border-radius: 6px; cursor: pointer; }
+      button:disabled { background: #94b7ff; cursor: not-allowed; }
+      .hint { color: #666; font-size: 0.9rem; }
+      footer { margin-top: 2rem; color: #666; font-size: 0.9rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Artwork Digitization & Portfolio Preparation</h1>
+    <form id="form" method="post" action="/process" enctype="multipart/form-data">
+      <div class="row">
+        <label>Artwork photo(s)</label>
+        <div>
+          <input type="file" name="files" multiple accept="image/*" required />
+          <div class="hint">Upload one or more photos of artworks (JPEG/PNG/TIFF/WEBP).</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <label>Medium</label>
+        <div>
+          <input type="text" name="medium" placeholder="e.g., Oil pastel" required />
+        </div>
+      </div>
+
+      <div class="row">
+        <label>Background</label>
+        <div>
+          <select name="bg">
+            <option value="white" selected>White (default)</option>
+            <option value="gray">Gray</option>
+            <option value="black">Black</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <label>Margin (%)</label>
+        <div>
+          <input type="number" name="margin" min="0" max="30" value="{{ defaults.margin }}" />
+        </div>
+      </div>
+
+      <div class="row">
+        <label>Web long edge (px)</label>
+        <div>
+          <input type="number" name="web_long_edge" min="500" max="8000" value="{{ defaults.web_long_edge }}" />
+        </div>
+      </div>
+
+      <div class="row">
+        <label>Print long edge (px)</label>
+        <div>
+          <input type="number" name="print_long_edge" min="1000" max="12000" value="{{ defaults.print_long_edge }}" />
+        </div>
+      </div>
+
+      <div class="row">
+        <label>Optional title</label>
+        <div><input type="text" name="title" placeholder="Final title (optional)" /></div>
+      </div>
+      <div class="row">
+        <label>Year</label>
+        <div><input type="text" name="year" placeholder="e.g., 2023" /></div>
+      </div>
+      <div class="row">
+        <label>Dimensions</label>
+        <div><input type="text" name="dims" placeholder="e.g., 30x40 cm" /></div>
+      </div>
+      <div class="row">
+        <label>Series</label>
+        <div><input type="text" name="series" placeholder="Series title (optional)" /></div>
+      </div>
+
+      <div class="row">
+        <label></label>
+        <div>
+          <button id="submit" type="submit">Process & Download ZIP</button>
+          <div class="hint">Generates web JPEGs, print PNGs, and metadata for each upload.</div>
+        </div>
+      </div>
+    </form>
+
+    <footer>
+      <div>Perspective correction, lighting normalization, gentle color balance, and neutral framing.</div>
+    </footer>
+
+    <script>
+      const form = document.getElementById('form');
+      const submitBtn = document.getElementById('submit');
+      form.addEventListener('submit', () => {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Processing...';
+        setTimeout(() => {
+          // re-enable after navigation back (best-effort UX)
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Process & Download ZIP';
+        }, 10000);
+      });
+    </script>
+  </body>
+  </html>
+

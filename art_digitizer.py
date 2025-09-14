@@ -56,14 +56,18 @@ def imwrite(path: str, img_rgb: np.ndarray, dpi: Optional[Tuple[int, int]] = Non
     pil_img.save(str(p), **save_params)
 
 
-def largest_quad_contour(binary: np.ndarray) -> Optional[np.ndarray]:
+def largest_quad_contour(binary: np.ndarray, min_area_ratio: float = 0.1) -> Optional[np.ndarray]:
+    h, w = binary.shape[:2]
+    img_area = float(h * w)
     contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:10]
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)
     for cnt in contours:
         peri = cv2.arcLength(cnt, True)
         approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
-        if len(approx) == 4:
-            return approx.reshape(4, 2)
+        if len(approx) == 4 and cv2.isContourConvex(approx):
+            area = abs(cv2.contourArea(approx))
+            if area / img_area >= min_area_ratio:
+                return approx.reshape(4, 2)
     return None
 
 
@@ -86,8 +90,8 @@ def four_point_warp(image: np.ndarray, pts: np.ndarray) -> np.ndarray:
     widthB = np.linalg.norm(tr - tl)
     heightA = np.linalg.norm(tr - br)
     heightB = np.linalg.norm(tl - bl)
-    maxW = int(max(widthA, widthB))
-    maxH = int(max(heightA, heightB))
+    maxW = max(1, int(max(widthA, widthB)))
+    maxH = max(1, int(max(heightA, heightB)))
     dst = np.array([[0,0],[maxW-1,0],[maxW-1,maxH-1],[0,maxH-1]], dtype="float32")
     M = cv2.getPerspectiveTransform(rect, dst)
     warped = cv2.warpPerspective(cv2.cvtColor(image, cv2.COLOR_RGB2BGR), M, (maxW, maxH), flags=cv2.INTER_CUBIC)
@@ -103,14 +107,18 @@ def perspective_correct(image: np.ndarray) -> np.ndarray:
     gray = cv2.GaussianBlur(gray, (5,5), 0)
     edges = cv2.Canny(gray, 50, 150)
     edges = cv2.dilate(edges, np.ones((3,3), np.uint8), iterations=1)
-    quad = largest_quad_contour(edges)
+    quad = largest_quad_contour(edges, min_area_ratio=0.1)
     if quad is not None:
         quad = (quad / scale).astype(np.float32)
         warped = four_point_warp(image, quad)
         return warped
     # Fallback: gentle deskew using minimum area rectangle
-    coords = np.column_stack(np.where(edges > 0))
-    angle = -cv2.minAreaRect(coords)[-1] if coords.size else 0
+    ys, xs = np.where(edges > 0)
+    if xs.size:
+        coords = np.column_stack((xs, ys)).astype(np.float32)
+        angle = -cv2.minAreaRect(coords)[-1]
+    else:
+        angle = 0
     if angle < -45:
         angle = -(90 + angle)
     else:

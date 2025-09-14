@@ -1,2 +1,6 @@
 /photos/
 /digitized/
+# Web app runtime outputs and caches
+/web/data/
+/web/**/__pycache__/
+/web/**/*.py[cod]
