@@ -24,6 +24,7 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 app = FastAPI(title="Artwork Digitizer", version="1.0.0")
 app.mount("/files", StaticFiles(directory=str(DATA_DIR)), name="files")
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -133,6 +134,7 @@ async def result(request: Request, run_id: str):
             {
                 "title": entry.get("metadata", {}).get("title", "Untitled"),
                 "medium": entry.get("metadata", {}).get("medium", ""),
+                "tags": entry.get("metadata", {}).get("tags", []),
                 "web_url": f"/files/{run_id}/{web_rel.as_posix()}",
                 "print_url": f"/files/{run_id}/{prn_rel.as_posix()}",
                 "meta_url": f"/files/{run_id}/{meta_rel.as_posix()}",
