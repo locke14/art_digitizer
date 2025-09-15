@@ -1,0 +1,12 @@
+.git
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.DS_Store
+web/data/
+digitized/
+photos/
+README_images/
+

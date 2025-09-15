@@ -52,7 +52,8 @@ def imwrite(path: str, img_rgb: np.ndarray, dpi: Optional[Tuple[int, int]] = Non
     if dpi:
         save_params["dpi"] = dpi
     if p.suffix.lower() in [".jpg", ".jpeg"]:
-        save_params.update(dict(quality=quality, optimize=True, progressive=True, subsampling=1))
+        # Use 4:4:4 subsampling to better preserve saturated oil pastel colors
+        save_params.update(dict(quality=quality, optimize=True, progressive=True, subsampling=0))
     pil_img.save(str(p), **save_params)
 
 
@@ -126,28 +127,89 @@ def perspective_correct(image: np.ndarray) -> np.ndarray:
     (h2, w2) = image.shape[:2]
     center = (w2 // 2, h2 // 2)
     M = cv2.getRotationMatrix2D(center, angle, 1.0)
-    rotated = cv2.warpAffine(cv2.cvtColor(image, cv2.COLOR_RGB2BGR), M, (w2, h2), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    # Use constant white border to avoid corner stripe artifacts after deskew
+    rotated = cv2.warpAffine(
+        cv2.cvtColor(image, cv2.COLOR_RGB2BGR),
+        M,
+        (w2, h2),
+        flags=cv2.INTER_CUBIC,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(255, 255, 255),
+    )
     rotated = cv2.cvtColor(rotated, cv2.COLOR_BGR2RGB)
     return rotated
 
 
-def gray_world_white_balance(img: np.ndarray) -> np.ndarray:
-    # Prevent oversaturation: normalize channel gains
+def auto_crop_constant_border(img: np.ndarray, tol: int = 6, max_crop_ratio: float = 0.25) -> np.ndarray:
+    """
+    Trim uniform borders introduced by rotation/warp (e.g., white triangles).
+    - Estimates background color from the four corners.
+    - Crops to bounding box of non-background pixels within tolerance.
+    - Limits crop to at most `max_crop_ratio` of width/height per side.
+    """
+    h, w = img.shape[:2]
+    if h < 10 or w < 10:
+        return img
+    kx = max(2, w // 20)
+    ky = max(2, h // 20)
+    corners = np.vstack([
+        img[0:ky, 0:kx].reshape(-1, 3),
+        img[0:ky, w - kx:w].reshape(-1, 3),
+        img[h - ky:h, 0:kx].reshape(-1, 3),
+        img[h - ky:h, w - kx:w].reshape(-1, 3),
+    ])
+    bg = np.median(corners, axis=0)
+    diff = np.max(np.abs(img.astype(np.int16) - bg.astype(np.int16)), axis=2)
+    mask = diff > int(tol)
+    ys, xs = np.where(mask)
+    if ys.size == 0 or xs.size == 0:
+        return img
+    y1, y2 = int(ys.min()), int(ys.max())
+    x1, x2 = int(xs.min()), int(xs.max())
+    # Constrain crop so we never remove more than max_crop_ratio per side
+    max_dx = int(w * max_crop_ratio)
+    max_dy = int(h * max_crop_ratio)
+    x1 = max(0, min(x1, max_dx))
+    y1 = max(0, min(y1, max_dy))
+    x2 = min(w - 1, max(x2, w - 1 - max_dx))
+    y2 = min(h - 1, max(y2, h - 1 - max_dy))
+    if x2 <= x1 or y2 <= y1:
+        return img
+    return img[y1:y2 + 1, x1:x2 + 1]
+
+
+def gray_world_white_balance(img: np.ndarray, strength: float = 0.8) -> np.ndarray:
+    # Normalize channel gains; blend with original using `strength` to avoid muting vibrancy
+    strength = float(np.clip(strength, 0.0, 1.0))
+    if strength <= 0:
+        return img
     img_f = img.astype(np.float32) + 1e-6
     avg = img_f.mean(axis=(0,1))
     scale = avg.mean() / avg
-    balanced = np.clip(img_f * scale, 0, 255).astype(np.uint8)
-    return balanced
+    balanced = np.clip(img_f * scale, 0, 255)
+    out = np.clip((1.0 - strength) * img_f + strength * balanced, 0, 255).astype(np.uint8)
+    return out
 
 
-def normalize_lighting(img: np.ndarray) -> np.ndarray:
-    # Work in LAB: CLAHE on L, mild
+def normalize_lighting(img: np.ndarray, clip_limit: float = 1.6, tile_grid: Tuple[int,int] = (8,8)) -> np.ndarray:
+    # Work in LAB: CLAHE on L; milder default to preserve texture
     lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
     L, A, B = cv2.split(lab)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    clahe = cv2.createCLAHE(clipLimit=float(clip_limit), tileGridSize=tuple(tile_grid))
     L2 = clahe.apply(L)
     lab2 = cv2.merge([L2, A, B])
     return cv2.cvtColor(lab2, cv2.COLOR_LAB2RGB)
+
+def boost_saturation(img: np.ndarray, gain: float = 1.06) -> np.ndarray:
+    # Gentle saturation boost in HSV to counteract perceived muting
+    gain = float(max(0.0, gain))
+    if abs(gain - 1.0) < 1e-3:
+        return img
+    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+    h, s, v = cv2.split(hsv)
+    s = np.clip(s.astype(np.float32) * gain, 0, 255).astype(np.uint8)
+    hsv2 = cv2.merge([h, s, v])
+    return cv2.cvtColor(hsv2, cv2.COLOR_HSV2RGB)
 
 
 def unsharp_mask(img: np.ndarray, radius: int = 2, amount: float = 1.0, threshold: int = 2) -> np.ndarray:
@@ -224,21 +286,35 @@ def process_image(
     title: Optional[str] = None,
     year: Optional[str] = None,
     dims: Optional[str] = None,
-    series: Optional[str] = None
+    series: Optional[str] = None,
+    vibrancy_gain: Optional[float] = None,
 ) -> dict:
     img = imread_rgb(path)
 
     # 1) Perspective correction
     img = perspective_correct(img)
+    # 1b) Trim any uniform borders from rotation/warp before further processing
+    img = auto_crop_constant_border(img, tol=6, max_crop_ratio=0.25)
 
     # 2) Subtle lighting normalization (no repainting)
-    img = normalize_lighting(img)
+    img = normalize_lighting(img, clip_limit=1.6, tile_grid=(8,8))
 
-    # 3) Gentle gray-world white balance
-    img = gray_world_white_balance(img)
+    # 3) Gentle gray-world white balance (blended)
+    med_l = (medium or "").lower()
+    wb_strength = 0.8
+    if "pastel" in med_l or "oil" in med_l:
+        wb_strength = 0.55
+    img = gray_world_white_balance(img, strength=wb_strength)
 
     # 4) Gentle sharpening (preserve stroke texture)
     img = unsharp_mask(img, radius=2, amount=0.8, threshold=2)
+
+    # Optional: slight saturation lift for vibrant mediums
+    vib = vibrancy_gain
+    if vib is None:
+        vib = 1.06 if ("pastel" in med_l or "oil" in med_l) else 1.0
+    if vib and abs(vib - 1.0) > 1e-3:
+        img = boost_saturation(img, gain=float(vib))
 
     # 5) Consistent framing on neutral background
     img_framed = add_neutral_frame(img, bg=bg, margin_percent=margin_percent)
@@ -286,7 +362,8 @@ def process_image(
             "print_long_edge": print_long_edge,
             "sharpening": {"radius": 2, "amount": 0.8, "threshold": 2},
             "color_balance": "gray-world",
-            "lighting": "LAB-CLAHE"
+            "lighting": "LAB-CLAHE",
+            "vibrancy_gain": vib
         }
     }
     meta_path = str(Path(out_dir) / f"{safe_base}_metadata.json")

@@ -5,6 +5,7 @@ import json
 import uuid
 import zipfile
 from pathlib import Path
+import os
 from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -18,7 +19,8 @@ import art_digitizer as ad
 
 
 BASE_DIR = Path(__file__).parent
-DATA_DIR = BASE_DIR / "data"
+# Allow overriding data dir for ephemeral environments (e.g., Cloud Run)
+DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR / "data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
@@ -52,6 +54,7 @@ async def process(
     margin: int = Form(6),
     web_long_edge: int = Form(2000),
     print_long_edge: int = Form(5000),
+    vibrancy: Optional[float] = Form(None),
     title: Optional[str] = Form(None),
     year: Optional[str] = Form(None),
     dims: Optional[str] = Form(None),
@@ -88,6 +91,7 @@ async def process(
             margin_percent=int(margin),
             web_long_edge=int(web_long_edge),
             print_long_edge=int(print_long_edge),
+            vibrancy_gain=(float(vibrancy) if vibrancy is not None and str(vibrancy).strip() != "" else None),
             title=title,
             year=year,
             dims=dims,

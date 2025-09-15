@@ -79,6 +79,20 @@
                     <input type="text" name="series" placeholder="Series title (optional)" />
                   </div>
                 </div>
+                <div style="margin-top:10px">
+                  <details class="panel" style="background: var(--panel);">
+                    <summary style="padding:12px 16px; cursor: pointer;">Advanced</summary>
+                    <div class="body" style="padding-top:6px;">
+                      <div class="controls">
+                        <div class="field">
+                          <label>Vibrancy (saturation gain)</label>
+                          <input type="number" step="0.01" min="0.8" max="1.5" name="vibrancy" placeholder="e.g., 1.06" />
+                          <div class="subtle">Leave empty for auto (1.06 for oil/pastel, 1.0 otherwise).</div>
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+                </div>
                 <div class="actions">
                   <button id="submit" class="btn" type="submit">Process Images</button>
                   <a class="btn secondary" href="/">Reset</a>

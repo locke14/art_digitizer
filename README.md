@@ -65,6 +65,47 @@ Web app storage:
 - Each run is stored under `web/data/<run_id>/` and served read‑only at `/files/<run_id>/...`.
 - Clean up by deleting old folders under `web/data/` (ignored by Git).
 
+## Deploy on Cloud Run (free tier)
+Cloud Run runs a container and is a good fit for OpenCV. Storage is ephemeral, so results persist only while a given instance stays warm. For durable storage, integrate a bucket (GCS/S3) later.
+
+1) Build container
+
+```
+gcloud builds submit --tag gcr.io/PROJECT_ID/art-digitizer
+```
+
+2) Deploy to Cloud Run
+
+```
+gcloud run deploy art-digitizer \
+  --image gcr.io/PROJECT_ID/art-digitizer \
+  --platform managed \
+  --allow-unauthenticated \
+  --region REGION \
+  --memory 1Gi
+```
+
+Notes
+- The app listens on `PORT` (default 8080). Cloud Run sets this env var.
+- Runtime data dir is configurable via `DATA_DIR` (defaults to `/tmp/artdig_data` in the container). You can change it in the service config if needed.
+- For persistent outputs, write to GCS and return links, or revert to “ZIP-only” responses.
+
+### One-liner deploy scripts
+
+- Bash (macOS/Linux/Git Bash):
+  - `./scripts/deploy_cloud_run.sh PROJECT_ID REGION [SERVICE_NAME]`
+  - Example: `./scripts/deploy_cloud_run.sh my-project us-central1 art-digitizer`
+
+- PowerShell (Windows):
+  - `powershell.exe -ExecutionPolicy Bypass -File scripts/deploy_cloud_run.ps1 -ProjectId PROJECT_ID -Region REGION -ServiceName art-digitizer`
+  - Example: `powershell.exe -ExecutionPolicy Bypass -File scripts/deploy_cloud_run.ps1 -ProjectId my-project -Region us-central1 -ServiceName art-digitizer`
+
+Both scripts:
+- Enable required APIs
+- Build the container via Cloud Build
+- Deploy to Cloud Run
+- Print the service URL at the end
+
 ## How It Works
 - Entry point: `art_digitizer.py`
   - Core pipeline: `process_image(...)` applies perspective correction, lighting/white balance, sharpening, framing, and writes outputs + metadata.
