@@ -302,7 +302,11 @@ def process_image(
     # 3) Gentle gray-world white balance (blended)
     med_l = (medium or "").lower()
     wb_strength = 0.8
-    if "pastel" in med_l or "oil" in med_l:
+    # Acrylics tend to get slightly muted with aggressive gray-world WB.
+    # Ease WB for acrylic; keep even gentler for oil/pastel to preserve richness.
+    if "acryl" in med_l:
+        wb_strength = 0.65
+    elif "pastel" in med_l or "oil" in med_l:
         wb_strength = 0.55
     img = gray_world_white_balance(img, strength=wb_strength)
 
@@ -312,7 +316,12 @@ def process_image(
     # Optional: slight saturation lift for vibrant mediums
     vib = vibrancy_gain
     if vib is None:
-        vib = 1.06 if ("pastel" in med_l or "oil" in med_l) else 1.0
+        if "acryl" in med_l:
+            vib = 1.08
+        elif "pastel" in med_l or "oil" in med_l:
+            vib = 1.06
+        else:
+            vib = 1.0
     if vib and abs(vib - 1.0) > 1e-3:
         img = boost_saturation(img, gain=float(vib))
 

@@ -42,6 +42,11 @@ Common flags:
 - `--print_long_edge`: print size long edge in px (default 5000)
 - Optional metadata: `--title`, `--year`, `--dims`, `--series`
 
+Defaults by medium:
+- Acrylic: softer white balance (0.65) and a small vibrancy lift (1.08)
+- Oil/Pastel: gentler white balance (0.55) and vibrancy 1.06
+- Others: white balance 0.8 and vibrancy 1.0
+
 Outputs per source image:
 - `*_Portfolio_Web.jpg` (72 dpi)
 - `*_Portfolio_Print.png` (300 dpi)

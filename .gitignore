@@ -4,3 +4,6 @@
 /web/data/
 /web/**/__pycache__/
 /web/**/*.py[cod]
+/__pycache__/
+*.py[cod]
+*$py.class
