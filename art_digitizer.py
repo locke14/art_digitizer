@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 from typing import List, Tuple, Optional
 
@@ -219,21 +220,71 @@ def unsharp_mask(img: np.ndarray, radius: int = 2, amount: float = 1.0, threshol
     return np.array(sharp)
 
 
-def add_neutral_frame(img: np.ndarray, bg: str = "white", margin_percent: int = 5) -> np.ndarray:
+def neutral_bg_color(bg: str) -> Tuple[int, int, int]:
     assert bg in ("white", "black", "gray")
-    h, w = img.shape[:2]
-    margin = int(round(margin_percent / 100.0 * max(h, w)))
-    new_h, new_w = h + 2*margin, w + 2*margin
     if bg == "white":
-        canvas_color = (255, 255, 255)
-    elif bg == "black":
-        canvas_color = (0, 0, 0)
+        return (255, 255, 255)
+    if bg == "black":
+        return (0, 0, 0)
+    return (245, 245, 245)  # subtle gray
+
+
+def add_neutral_frame(img: np.ndarray, bg: str = "white", margin_percent: int = 5, preserve_ratio: bool = False) -> np.ndarray:
+    h, w = img.shape[:2]
+    if preserve_ratio:
+        margin_x = int(round(margin_percent / 100.0 * w))
+        margin_y = int(round(margin_percent / 100.0 * h))
     else:
-        canvas_color = (245, 245, 245)  # subtle gray
+        margin = int(round(margin_percent / 100.0 * max(h, w)))
+        margin_x = margin_y = margin
+    new_h, new_w = h + 2*margin_y, w + 2*margin_x
+    canvas_color = neutral_bg_color(bg)
     canvas = np.full((new_h, new_w, 3), canvas_color, dtype=np.uint8)
-    y0, x0 = margin, margin
+    y0, x0 = margin_y, margin_x
     canvas[y0:y0+h, x0:x0+w] = img
     return canvas
+
+
+def crop_to_aspect(img: np.ndarray, target_ratio: float) -> np.ndarray:
+    if not img.size or target_ratio <= 0:
+        return img
+    h, w = img.shape[:2]
+    current_ratio = w / max(h, 1)
+    if abs(current_ratio - target_ratio) < 1e-3:
+        return img
+    if current_ratio > target_ratio:
+        new_w = max(1, int(round(h * target_ratio)))
+        if new_w >= w:
+            return img
+        x0 = max(0, (w - new_w) // 2)
+        return img[:, x0:x0 + new_w]
+    else:
+        new_h = max(1, int(round(w / target_ratio)))
+        if new_h >= h:
+            return img
+        y0 = max(0, (h - new_h) // 2)
+        return img[y0:y0 + new_h, :]
+
+
+DIM_PATTERN = re.compile(r"(\d+(?:[\.,]\d+)?)\s*x\s*(\d+(?:[\.,]\d+)?)")
+
+
+def parse_dims_ratio(dims: Optional[str]) -> Optional[float]:
+    if not dims:
+        return None
+    normalized = dims.lower().replace("×", "x")
+    match = DIM_PATTERN.search(normalized)
+    if not match:
+        return None
+    w_str, h_str = match.groups()
+    try:
+        w_val = float(w_str.replace(",", "."))
+        h_val = float(h_str.replace(",", "."))
+    except ValueError:
+        return None
+    if w_val <= 0 or h_val <= 0:
+        return None
+    return w_val / h_val
 
 
 def fit_long_edge(img: np.ndarray, long_edge: int) -> np.ndarray:
@@ -290,6 +341,7 @@ def process_image(
     vibrancy_gain: Optional[float] = None,
 ) -> dict:
     img = imread_rgb(path)
+    dims_ratio = parse_dims_ratio(dims)
 
     # 1) Perspective correction
     img = perspective_correct(img)
@@ -325,8 +377,17 @@ def process_image(
     if vib and abs(vib - 1.0) > 1e-3:
         img = boost_saturation(img, gain=float(vib))
 
+    # Optional aspect lock based on provided dimensions
+    if dims_ratio:
+        img = crop_to_aspect(img, dims_ratio)
+
     # 5) Consistent framing on neutral background
-    img_framed = add_neutral_frame(img, bg=bg, margin_percent=margin_percent)
+    img_framed = add_neutral_frame(
+        img,
+        bg=bg,
+        margin_percent=margin_percent,
+        preserve_ratio=bool(dims_ratio),
+    )
 
     # 6) Output variants
     base = Path(path).stem
@@ -405,7 +466,11 @@ def main():
     parser.add_argument("--print_long_edge", type=int, default=5000, help="Target long edge (px) for print output (default: 5000)")
     parser.add_argument("--title", default=None, help="Optional final title")
     parser.add_argument("--year", default=None, help="Year (optional)")
-    parser.add_argument("--dims", default=None, help="Dimensions, e.g., '30x40 cm' (optional)")
+    parser.add_argument(
+        "--dims",
+        default=None,
+        help="Dimensions, e.g., '30x40 cm' (optional; center-crops output to that aspect ratio)",
+    )
     parser.add_argument("--series", default=None, help="Series title (optional)")
     args = parser.parse_args()
 

@@ -41,6 +41,7 @@ Common flags:
 - `--web_long_edge`: web size long edge in px (default 2000)
 - `--print_long_edge`: print size long edge in px (default 5000)
 - Optional metadata: `--title`, `--year`, `--dims`, `--series`
+- If `--dims` contains two numbers (e.g., `40x40 cm`), artwork is center-cropped to that aspect ratio before framing.
 
 Defaults by medium:
 - Acrylic: softer white balance (0.65) and a small vibrancy lift (1.08)
